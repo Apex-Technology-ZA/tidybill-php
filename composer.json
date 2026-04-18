@@ -1,0 +1,52 @@
+{
+    "name": "apextechnology/tidybill",
+    "description": "PHP SDK for the TidyBill invoicing API — create invoices, manage line items, and fetch clients. Works with any PHP project; optional Laravel support via service provider.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Zayin Krige",
+            "email": "zkrige@gmail.com"
+        }
+    ],
+    "keywords": [
+        "tidybill",
+        "billing",
+        "invoicing",
+        "api",
+        "client",
+        "laravel"
+    ],
+    "require": {
+        "php": "^8.2",
+        "ext-json": "*",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "illuminate/support": "^11.0|^12.0",
+        "orchestra/testbench": "^9.0|^10.0",
+        "phpunit/phpunit": "^11.0|^12.0"
+    },
+    "suggest": {
+        "illuminate/support": "Required if you use the TidyBillServiceProvider for Laravel auto-wiring."
+    },
+    "autoload": {
+        "psr-4": {
+            "ApexTechnology\\TidyBill\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ApexTechnology\\TidyBill\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ApexTechnology\\TidyBill\\TidyBillServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

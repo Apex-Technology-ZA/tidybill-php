@@ -37,7 +37,15 @@ class TidyBillClientTest extends TestCase
         $stack = HandlerStack::create($this->mockHandler);
         $stack->push(Middleware::history($this->history));
 
-        $guzzle = new Client(['handler' => $stack]);
+        $guzzle = new Client([
+            'handler' => $stack,
+            'headers' => [
+                'Authorization' => 'Bearer test-token',
+                'X-Company-Id'  => 'test-company',
+                'Accept'        => 'application/json',
+                'Content-Type'  => 'application/json',
+            ],
+        ]);
 
         $this->client = new TidyBillClient(
             token: 'test-token',
@@ -181,6 +189,32 @@ class TidyBillClientTest extends TestCase
     }
 
     #[Test]
+    public function update_line_item_sends_put_to_correct_uri(): void
+    {
+        $this->mockHandler->append($this->json([
+            'id'          => 10,
+            'description' => 'Updated call',
+            'quantity'    => 3,
+            'unit_price'  => 200,
+            'total'       => 600,
+        ]));
+
+        $result = $this->client->updateLineItem(1, 10, new LineItemData(
+            description: 'Updated call',
+            quantity: 3,
+            unitPrice: 2.00,
+        ));
+
+        $this->assertInstanceOf(LineItemResult::class, $result);
+        $this->assertSame(10, $result->id);
+        $this->assertSame(2.00, $result->unitPrice);
+
+        $req = $this->lastRequest();
+        $this->assertSame('PUT', $req->getMethod());
+        $this->assertStringContainsString('api/invoices/1/line-items/10', (string) $req->getUri());
+    }
+
+    #[Test]
     public function throws_auth_exception_on_401(): void
     {
         $this->mockHandler->append($this->json(['message' => 'Unauthenticated'], 401));
@@ -279,9 +313,8 @@ class TidyBillClientTest extends TestCase
     {
         $this->mockHandler->append(new Response(204));
 
-        $result = $this->client->deleteLineItem(1, 10);
+        $this->client->deleteLineItem(1, 10);
 
-        $this->assertTrue($result);
         $this->assertSame('DELETE', $this->lastRequest()->getMethod());
         $this->assertStringContainsString('api/invoices/1/line-items/10', (string) $this->lastRequest()->getUri());
     }
@@ -297,5 +330,64 @@ class TidyBillClientTest extends TestCase
         );
 
         $this->assertInstanceOf(TidyBillClient::class, $client);
+    }
+
+    #[Test]
+    public function rejects_http_base_url(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('TidyBill base URL must use HTTPS.');
+
+        new TidyBillClient(
+            token: 'tok',
+            companyId: 'co',
+            baseUrl: 'http://tidybill.app',
+        );
+    }
+
+    #[Test]
+    public function rejects_empty_token(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('TidyBill token and company ID are required.');
+
+        new TidyBillClient(
+            token: '',
+            companyId: 'co',
+            baseUrl: 'https://tidybill.app',
+        );
+    }
+
+    #[Test]
+    public function rejects_empty_company_id(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('TidyBill token and company ID are required.');
+
+        new TidyBillClient(
+            token: 'tok',
+            companyId: '',
+            baseUrl: 'https://tidybill.app',
+        );
+    }
+
+    #[Test]
+    public function debug_info_masks_token(): void
+    {
+        $info = $this->client->__debugInfo();
+
+        $this->assertSame('***', $info['token']);
+        $this->assertSame('test-company', $info['companyId']);
+    }
+
+    #[Test]
+    public function throws_exception_on_invalid_json_response(): void
+    {
+        $this->mockHandler->append(new Response(200, ['Content-Type' => 'application/json'], 'not-valid-json{'));
+
+        $this->expectException(TidyBillException::class);
+        $this->expectExceptionMessage('Failed to decode API response:');
+
+        $this->client->getInvoices();
     }
 }

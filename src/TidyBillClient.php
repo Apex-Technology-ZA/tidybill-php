@@ -22,11 +22,25 @@ class TidyBillClient
     public function __construct(
         private readonly string $token,
         private readonly string $companyId,
-        private readonly string $baseUrl = 'https://tidybill.app',
+        string $baseUrl = 'https://tidybill.app',
         ?ClientInterface $httpClient = null,
     ) {
+        if (empty($token) || empty($companyId)) {
+            throw new \InvalidArgumentException('TidyBill token and company ID are required.');
+        }
+
+        if (!str_starts_with(rtrim($baseUrl, '/'), 'https://')) {
+            throw new \InvalidArgumentException('TidyBill base URL must use HTTPS.');
+        }
+
         $this->httpClient = $httpClient ?? new Client([
-            'base_uri' => rtrim($this->baseUrl, '/') . '/',
+            'base_uri' => rtrim($baseUrl, '/') . '/',
+            'headers'  => [
+                'Authorization' => "Bearer {$this->token}",
+                'X-Company-Id'  => $this->companyId,
+                'Accept'        => 'application/json',
+                'Content-Type'  => 'application/json',
+            ],
         ]);
     }
 
@@ -92,11 +106,9 @@ class TidyBillClient
         return LineItemResult::fromResponse($this->decode($response));
     }
 
-    public function deleteLineItem(int $invoiceId, int $lineItemId): bool
+    public function deleteLineItem(int $invoiceId, int $lineItemId): void
     {
         $this->send('DELETE', "api/invoices/{$invoiceId}/line-items/{$lineItemId}");
-
-        return true;
     }
 
     /**
@@ -122,18 +134,19 @@ class TidyBillClient
 
     private function send(string $method, string $uri, array $options = []): ResponseInterface
     {
-        $options['headers'] = array_merge([
-            'Authorization' => "Bearer {$this->token}",
-            'X-Company-Id'  => $this->companyId,
-            'Accept'        => 'application/json',
-            'Content-Type'  => 'application/json',
-        ], $options['headers'] ?? []);
-
         try {
             return $this->httpClient->request($method, $uri, $options);
         } catch (BadResponseException $e) {
             $this->throwForResponse($e->getResponse());
         }
+    }
+
+    public function __debugInfo(): array
+    {
+        return [
+            'companyId' => $this->companyId,
+            'token'     => '***',
+        ];
     }
 
     private function decode(ResponseInterface $response): array
@@ -144,7 +157,13 @@ class TidyBillClient
             return [];
         }
 
-        return json_decode($body, true) ?? [];
+        $decoded = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new TidyBillException('Failed to decode API response: ' . json_last_error_msg());
+        }
+
+        return $decoded ?? [];
     }
 
     private function throwForResponse(ResponseInterface $response): never

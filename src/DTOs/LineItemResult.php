@@ -14,12 +14,14 @@ class LineItemResult
 
     public static function fromResponse(array $data): self
     {
+        $item = $data['data'] ?? $data;
+
         return new self(
-            id: $data['id'],
-            description: $data['description'],
-            quantity: $data['quantity'],
-            unitPrice: (float) ($data['unit_price'] ?? 0) / 100,
-            total: (float) ($data['total'] ?? 0) / 100,
+            id: $item['id'],
+            description: $item['description'],
+            quantity: $item['quantity'],
+            unitPrice: (float) ($item['unit_price'] ?? 0),
+            total: (float) ($item['amount'] ?? $item['total'] ?? 0),
         );
     }
 }

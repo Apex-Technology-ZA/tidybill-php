@@ -15,8 +15,8 @@ class LineItemResultTest extends TestCase
             'id'          => 1,
             'description' => 'API call',
             'quantity'    => 5,
-            'unit_price'  => 150,
-            'total'       => 750,
+            'unit_price'  => '1.500000',
+            'amount'      => '7.500000',
         ]);
 
         $this->assertSame(1.50, $result->unitPrice);
@@ -30,8 +30,8 @@ class LineItemResultTest extends TestCase
             'id'          => 10,
             'description' => 'Widget',
             'quantity'    => 3,
-            'unit_price'  => 500,
-            'total'       => 1500,
+            'unit_price'  => '5.000000',
+            'amount'      => '15.000000',
         ]);
 
         $this->assertSame(10, $result->id);
@@ -48,7 +48,7 @@ class LineItemResultTest extends TestCase
             'id'          => 1,
             'description' => 'Free item',
             'quantity'    => 1,
-            'total'       => 0,
+            'amount'      => '0.000000',
         ]);
 
         $this->assertSame(0.0, $result->unitPrice);
@@ -61,7 +61,7 @@ class LineItemResultTest extends TestCase
             'id'          => 1,
             'description' => 'Free item',
             'quantity'    => 1,
-            'unit_price'  => 0,
+            'unit_price'  => '0.000000',
         ]);
 
         $this->assertSame(0.0, $result->total);
@@ -74,8 +74,8 @@ class LineItemResultTest extends TestCase
             'id'          => 1,
             'description' => 'Zero qty',
             'quantity'    => 0,
-            'unit_price'  => 100,
-            'total'       => 0,
+            'unit_price'  => '1.000000',
+            'amount'      => '0.000000',
         ]);
 
         $this->assertSame(0, $result->quantity);
@@ -90,8 +90,8 @@ class LineItemResultTest extends TestCase
             'id'          => 1,
             'description' => 'Large',
             'quantity'    => 10000,
-            'unit_price'  => 99999900,
-            'total'       => 999999000000,
+            'unit_price'  => '999999.000000',
+            'amount'      => '9999990000.000000',
         ]);
 
         $this->assertSame(999999.0, $result->unitPrice);

@@ -17,15 +17,17 @@ class InvoiceResult
 
     public static function fromResponse(array $data): self
     {
+        $invoice = $data['data'] ?? $data;
+
         return new self(
-            id: $data['id'],
-            clientId: (string) $data['client_id'],
-            status: $data['status'],
-            issueDate: $data['issue_date'],
-            currency: $data['currency'] ?? 'ZAR',
-            total: (float) ($data['total'] ?? 0),
-            lineItems: $data['line_items'] ?? [],
-            raw: $data,
+            id: $invoice['id'],
+            clientId: (string) $invoice['client_id'],
+            status: $invoice['status'],
+            issueDate: $invoice['issue_date'],
+            currency: $invoice['currency'] ?? 'ZAR',
+            total: (float) ($invoice['total'] ?? 0),
+            lineItems: $invoice['line_items'] ?? [],
+            raw: $invoice,
         );
     }
 }

@@ -13,11 +13,13 @@ class ClientData
 
     public static function fromResponse(array $data): self
     {
+        $client = $data['data'] ?? $data;
+
         return new self(
-            id: (string) $data['id'],
-            name: $data['name'],
-            email: $data['email'] ?? null,
-            raw: $data,
+            id: (string) $client['id'],
+            name: $client['name'],
+            email: $client['email'] ?? null,
+            raw: $client,
         );
     }
 }

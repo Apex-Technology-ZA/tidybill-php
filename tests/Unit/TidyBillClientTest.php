@@ -152,11 +152,13 @@ class TidyBillClientTest extends TestCase
     public function add_line_item_to_invoice(): void
     {
         $this->mockHandler->append($this->json([
-            'id'          => 10,
-            'description' => 'API call',
-            'quantity'    => 5,
-            'unit_price'  => 150,
-            'total'       => 750,
+            'data' => [
+                'id'          => 10,
+                'description' => 'API call',
+                'quantity'    => 5,
+                'unit_price'  => '1.500000',
+                'amount'      => '7.500000',
+            ],
         ], 201));
 
         $result = $this->client->addLineItem(1, new LineItemData(
@@ -174,8 +176,8 @@ class TidyBillClientTest extends TestCase
     public function add_line_items_calls_add_line_item_for_each(): void
     {
         $this->mockHandler->append(
-            $this->json(['id' => 10, 'description' => 'A', 'quantity' => 1, 'unit_price' => 100, 'total' => 100], 201),
-            $this->json(['id' => 11, 'description' => 'B', 'quantity' => 2, 'unit_price' => 200, 'total' => 400], 201),
+            $this->json(['data' => ['id' => 10, 'description' => 'A', 'quantity' => 1, 'unit_price' => '1.000000', 'amount' => '1.000000']], 201),
+            $this->json(['data' => ['id' => 11, 'description' => 'B', 'quantity' => 2, 'unit_price' => '2.000000', 'amount' => '4.000000']], 201),
         );
 
         $results = $this->client->addLineItems(1, [
@@ -192,11 +194,13 @@ class TidyBillClientTest extends TestCase
     public function update_line_item_sends_put_to_correct_uri(): void
     {
         $this->mockHandler->append($this->json([
-            'id'          => 10,
-            'description' => 'Updated call',
-            'quantity'    => 3,
-            'unit_price'  => 200,
-            'total'       => 600,
+            'data' => [
+                'id'          => 10,
+                'description' => 'Updated call',
+                'quantity'    => 3,
+                'unit_price'  => '2.000000',
+                'amount'      => '6.000000',
+            ],
         ]));
 
         $result = $this->client->updateLineItem(1, 10, new LineItemData(

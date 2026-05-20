@@ -16,7 +16,7 @@ class LineItemDataEdgeCaseTest extends TestCase
         $array = $item->toArray();
 
         $this->assertSame(0, $array['quantity']);
-        $this->assertSame(100, $array['unit_price']);
+        $this->assertSame(100.0, $array['unit_price']);
     }
 
     #[Test]
@@ -26,7 +26,7 @@ class LineItemDataEdgeCaseTest extends TestCase
 
         $array = $item->toArray();
 
-        $this->assertSame(0, $array['unit_price']);
+        $this->assertSame(0.0, $array['unit_price']);
     }
 
     #[Test]
@@ -36,7 +36,7 @@ class LineItemDataEdgeCaseTest extends TestCase
 
         $array = $item->toArray();
 
-        $this->assertSame(9999999, $array['unit_price']);
+        $this->assertSame(9999999.0, $array['unit_price']);
     }
 
     #[Test]
@@ -47,7 +47,7 @@ class LineItemDataEdgeCaseTest extends TestCase
         $array = $item->toArray();
 
         $this->assertSame(1000000, $array['quantity']);
-        $this->assertSame(1, $array['unit_price']);
+        $this->assertSame(1.0, $array['unit_price']);
     }
 
     #[Test]
@@ -60,13 +60,13 @@ class LineItemDataEdgeCaseTest extends TestCase
     }
 
     #[Test]
-    public function unit_price_in_cents_is_integer(): void
+    public function unit_price_in_cents_is_float(): void
     {
         $item = new LineItemData(description: 'Test', quantity: 1, unitPrice: 12.34);
 
         $array = $item->toArray();
 
-        $this->assertIsInt($array['unit_price']);
-        $this->assertSame(1234, $array['unit_price']);
+        $this->assertIsFloat($array['unit_price']);
+        $this->assertSame(1234.0, $array['unit_price']);
     }
 }

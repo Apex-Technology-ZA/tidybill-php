@@ -15,7 +15,7 @@ class LineItemData
         return [
             'description' => $this->description,
             'quantity' => $this->quantity,
-            'unit_price' => (int) round($this->unitPrice * 100),
+            'unit_price' => round($this->unitPrice * 100, 6),
         ];
     }
 }

@@ -76,7 +76,7 @@ class CreateInvoiceDataTest extends TestCase
         $this->assertCount(1, $array['line_items']);
         $this->assertSame('Widget', $array['line_items'][0]['description']);
         $this->assertSame(2, $array['line_items'][0]['quantity']);
-        $this->assertSame(500, $array['line_items'][0]['unit_price']);
+        $this->assertSame(500.0, $array['line_items'][0]['unit_price']);
     }
 
     #[Test]
@@ -94,8 +94,8 @@ class CreateInvoiceDataTest extends TestCase
         $array = $data->toArray();
 
         $this->assertCount(2, $array['line_items']);
-        $this->assertSame(100, $array['line_items'][0]['unit_price']);
-        $this->assertSame(250, $array['line_items'][1]['unit_price']);
+        $this->assertSame(100.0, $array['line_items'][0]['unit_price']);
+        $this->assertSame(250.0, $array['line_items'][1]['unit_price']);
     }
 
     #[Test]

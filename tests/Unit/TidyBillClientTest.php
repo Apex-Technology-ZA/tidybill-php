@@ -6,6 +6,8 @@ use ApexTechnology\TidyBill\DTOs\CreateInvoiceData;
 use ApexTechnology\TidyBill\DTOs\InvoiceResult;
 use ApexTechnology\TidyBill\DTOs\LineItemData;
 use ApexTechnology\TidyBill\DTOs\LineItemResult;
+use ApexTechnology\TidyBill\Enums\DraftTieBreak;
+use ApexTechnology\TidyBill\Exceptions\MultipleDraftsException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillAuthException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillNotFoundException;
@@ -393,5 +395,218 @@ class TidyBillClientTest extends TestCase
         $this->expectExceptionMessage('Failed to decode API response:');
 
         $this->client->getInvoices();
+    }
+
+    private function draft(int $id, string $clientId, string $issueDate): array
+    {
+        return [
+            'id'         => $id,
+            'client_id'  => $clientId,
+            'status'     => 'draft',
+            'issue_date' => $issueDate,
+            'currency'   => 'ZAR',
+            'total'      => 1000,
+            'line_items' => [],
+        ];
+    }
+
+    #[Test]
+    public function find_draft_invoice_returns_null_when_no_invoices(): void
+    {
+        $this->mockHandler->append($this->json(['data' => []]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertNull($result);
+        $this->assertCount(1, $this->history);
+        $this->assertSame('GET', $this->history[0]['request']->getMethod());
+    }
+
+    #[Test]
+    public function find_draft_invoice_returns_null_when_no_match_for_client(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(1, '99', '2026-04-20'),
+            $this->draft(2, '77', '2026-05-20'),
+        ]]));
+
+        $this->assertNull($this->client->findDraftInvoice('42'));
+    }
+
+    #[Test]
+    public function find_draft_invoice_returns_single_match(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(7, '42', '2026-05-20'),
+        ]]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertInstanceOf(InvoiceResult::class, $result);
+        $this->assertSame(7, $result->id);
+    }
+
+    #[Test]
+    public function find_draft_invoice_with_newest_picks_latest_issue_date(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(1, '42', '2026-04-20'),
+            $this->draft(2, '42', '2026-05-20'),
+        ]]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertSame(2, $result->id);
+        $this->assertSame('2026-05-20', $result->issueDate);
+    }
+
+    #[Test]
+    public function find_draft_invoice_with_oldest_picks_earliest(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(1, '42', '2026-04-20'),
+            $this->draft(2, '42', '2026-05-20'),
+        ]]));
+
+        $result = $this->client->findDraftInvoice('42', DraftTieBreak::Oldest);
+
+        $this->assertSame(1, $result->id);
+        $this->assertSame('2026-04-20', $result->issueDate);
+    }
+
+    #[Test]
+    public function find_draft_invoice_with_strict_throws_on_multiple(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(1, '42', '2026-04-20'),
+            $this->draft(2, '42', '2026-05-20'),
+        ]]));
+
+        try {
+            $this->client->findDraftInvoice('42', DraftTieBreak::Strict);
+            $this->fail('Expected MultipleDraftsException');
+        } catch (MultipleDraftsException $e) {
+            $this->assertSame('42', $e->clientId);
+            $this->assertSame([1, 2], $e->draftIds);
+        }
+    }
+
+    #[Test]
+    public function find_draft_invoice_newest_breaks_tie_by_id(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(100, '42', '2026-05-20'),
+            $this->draft(200, '42', '2026-05-20'),
+        ]]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertSame(200, $result->id);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_throws_on_empty_lineitems(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('lineItems must not be empty');
+
+        $this->client->appendLineItemsToDraftOrCreate('42', []);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_creates_when_no_draft(): void
+    {
+        $this->mockHandler->append(
+            $this->json(['data' => []]),
+            $this->json($this->draft(55, '42', (new \DateTimeImmutable())->format('Y-m-d')), 201),
+        );
+
+        $result = $this->client->appendLineItemsToDraftOrCreate('42', [
+            new LineItemData(description: 'Scan', quantity: 1, unitPrice: 1.0),
+        ]);
+
+        $this->assertSame(55, $result->id);
+        $this->assertCount(2, $this->history);
+
+        $createReq = $this->history[1]['request'];
+        $body      = json_decode((string) $createReq->getBody(), true);
+
+        $this->assertSame('POST', $createReq->getMethod());
+        $this->assertStringContainsString('api/invoices', (string) $createReq->getUri());
+        $this->assertSame('42', $body['client_id']);
+        $this->assertSame('ZAR', $body['currency']);
+        $this->assertSame((new \DateTimeImmutable())->format('Y-m-d'), $body['issue_date']);
+        $this->assertCount(1, $body['line_items']);
+        $this->assertSame('Scan', $body['line_items'][0]['description']);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_appends_when_draft_exists(): void
+    {
+        $this->mockHandler->append(
+            $this->json(['data' => [$this->draft(999, '42', '2026-05-20')]]),
+            $this->json(['data' => ['id' => 10, 'description' => 'Scan', 'quantity' => 1, 'unit_price' => '1.000000', 'amount' => '1.000000']], 201),
+            $this->json($this->draft(999, '42', '2026-05-20')),
+        );
+
+        $result = $this->client->appendLineItemsToDraftOrCreate('42', [
+            new LineItemData(description: 'Scan', quantity: 1, unitPrice: 1.0),
+        ]);
+
+        $this->assertSame(999, $result->id);
+        $this->assertCount(3, $this->history);
+
+        $this->assertSame('GET', $this->history[0]['request']->getMethod());
+        $this->assertStringContainsString('api/invoices', (string) $this->history[0]['request']->getUri());
+
+        $this->assertSame('POST', $this->history[1]['request']->getMethod());
+        $this->assertStringContainsString('api/invoices/999/line-items', (string) $this->history[1]['request']->getUri());
+
+        $this->assertSame('GET', $this->history[2]['request']->getMethod());
+        $this->assertStringContainsString('api/invoices/999', (string) $this->history[2]['request']->getUri());
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_appends_multiple_line_items(): void
+    {
+        $this->mockHandler->append(
+            $this->json(['data' => [$this->draft(999, '42', '2026-05-20')]]),
+            $this->json(['data' => ['id' => 10, 'description' => 'A', 'quantity' => 1, 'unit_price' => '1.000000', 'amount' => '1.000000']], 201),
+            $this->json(['data' => ['id' => 11, 'description' => 'B', 'quantity' => 2, 'unit_price' => '2.000000', 'amount' => '4.000000']], 201),
+            $this->json(['data' => ['id' => 12, 'description' => 'C', 'quantity' => 3, 'unit_price' => '3.000000', 'amount' => '9.000000']], 201),
+            $this->json($this->draft(999, '42', '2026-05-20')),
+        );
+
+        $result = $this->client->appendLineItemsToDraftOrCreate('42', [
+            new LineItemData(description: 'A', quantity: 1, unitPrice: 1.0),
+            new LineItemData(description: 'B', quantity: 2, unitPrice: 2.0),
+            new LineItemData(description: 'C', quantity: 3, unitPrice: 3.0),
+        ]);
+
+        $this->assertSame(999, $result->id);
+        $this->assertCount(5, $this->history);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_strict_propagates_multiple_drafts_exception(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            $this->draft(1, '42', '2026-04-20'),
+            $this->draft(2, '42', '2026-05-20'),
+        ]]));
+
+        try {
+            $this->client->appendLineItemsToDraftOrCreate(
+                '42',
+                [new LineItemData(description: 'Scan', quantity: 1, unitPrice: 1.0)],
+                DraftTieBreak::Strict,
+            );
+            $this->fail('Expected MultipleDraftsException');
+        } catch (MultipleDraftsException $e) {
+            $this->assertSame('42', $e->clientId);
+            $this->assertSame([1, 2], $e->draftIds);
+        }
+
+        $this->assertCount(1, $this->history);
     }
 }

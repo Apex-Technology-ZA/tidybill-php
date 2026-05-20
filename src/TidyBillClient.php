@@ -7,6 +7,8 @@ use ApexTechnology\TidyBill\DTOs\CreateInvoiceData;
 use ApexTechnology\TidyBill\DTOs\InvoiceResult;
 use ApexTechnology\TidyBill\DTOs\LineItemData;
 use ApexTechnology\TidyBill\DTOs\LineItemResult;
+use ApexTechnology\TidyBill\Enums\DraftTieBreak;
+use ApexTechnology\TidyBill\Exceptions\MultipleDraftsException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillAuthException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillNotFoundException;
@@ -130,6 +132,79 @@ class TidyBillClient
         $response = $this->send('GET', "api/clients/{$id}");
 
         return ClientData::fromResponse($this->decode($response));
+    }
+
+    public function findDraftInvoice(
+        string $clientId,
+        DraftTieBreak $tieBreak = DraftTieBreak::Newest,
+    ): ?InvoiceResult {
+        $invoices = $this->getInvoices(['client_id' => $clientId, 'status' => 'draft']);
+
+        // TidyBill's client_id filter has been observed returning invoices
+        // for other clients; re-filter defensively before resolving.
+        $drafts = array_values(array_filter(
+            $invoices,
+            fn (InvoiceResult $i) => $i->clientId === $clientId,
+        ));
+
+        return $this->resolveDrafts($drafts, $clientId, $tieBreak);
+    }
+
+    /**
+     * @param LineItemData[] $lineItems
+     */
+    public function appendLineItemsToDraftOrCreate(
+        string $clientId,
+        array $lineItems,
+        DraftTieBreak $tieBreak = DraftTieBreak::Newest,
+    ): InvoiceResult {
+        if ($lineItems === []) {
+            throw new \InvalidArgumentException('lineItems must not be empty');
+        }
+
+        $draft = $this->findDraftInvoice($clientId, $tieBreak);
+
+        if ($draft === null) {
+            return $this->createInvoice(new CreateInvoiceData(
+                clientId: $clientId,
+                issueDate: (new \DateTimeImmutable())->format('Y-m-d'),
+                currency: 'ZAR',
+                lineItems: $lineItems,
+            ));
+        }
+
+        foreach ($lineItems as $item) {
+            $this->addLineItem($draft->id, $item);
+        }
+
+        return $this->getInvoice($draft->id);
+    }
+
+    /**
+     * @param InvoiceResult[] $drafts
+     */
+    private function resolveDrafts(array $drafts, string $clientId, DraftTieBreak $tieBreak): ?InvoiceResult
+    {
+        if ($drafts === []) {
+            return null;
+        }
+
+        if (count($drafts) === 1) {
+            return $drafts[0];
+        }
+
+        if ($tieBreak === DraftTieBreak::Strict) {
+            throw new MultipleDraftsException(
+                $clientId,
+                array_map(fn (InvoiceResult $i) => $i->id, $drafts),
+            );
+        }
+
+        usort($drafts, fn (InvoiceResult $a, InvoiceResult $b) => $tieBreak === DraftTieBreak::Newest
+            ? [$b->issueDate, $b->id] <=> [$a->issueDate, $a->id]
+            : [$a->issueDate, $a->id] <=> [$b->issueDate, $b->id]);
+
+        return $drafts[0];
     }
 
     private function send(string $method, string $uri, array $options = []): ResponseInterface

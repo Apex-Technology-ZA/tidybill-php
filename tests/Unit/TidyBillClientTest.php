@@ -516,9 +516,10 @@ class TidyBillClientTest extends TestCase
     #[Test]
     public function append_line_items_to_draft_or_create_creates_when_no_draft(): void
     {
+        $today = (new \DateTimeImmutable())->format('Y-m-d');
         $this->mockHandler->append(
             $this->json(['data' => []]),
-            $this->json($this->draft(55, '42', (new \DateTimeImmutable())->format('Y-m-d')), 201),
+            $this->json($this->draft(55, '42', $today), 201),
         );
 
         $result = $this->client->appendLineItemsToDraftOrCreate('42', [
@@ -535,7 +536,7 @@ class TidyBillClientTest extends TestCase
         $this->assertStringContainsString('api/invoices', (string) $createReq->getUri());
         $this->assertSame('42', $body['client_id']);
         $this->assertSame('ZAR', $body['currency']);
-        $this->assertSame((new \DateTimeImmutable())->format('Y-m-d'), $body['issue_date']);
+        $this->assertSame($today, $body['issue_date']);
         $this->assertCount(1, $body['line_items']);
         $this->assertSame('Scan', $body['line_items'][0]['description']);
     }
@@ -608,5 +609,68 @@ class TidyBillClientTest extends TestCase
         }
 
         $this->assertCount(1, $this->history);
+    }
+
+    #[Test]
+    public function find_draft_invoice_trims_whitespace_when_matching_client_id(): void
+    {
+        $invoice = $this->draft(7, ' 42 ', '2026-05-20');
+        $this->mockHandler->append($this->json(['data' => [$invoice]]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertNotNull($result);
+        $this->assertSame(7, $result->id);
+    }
+
+    #[Test]
+    public function find_draft_invoice_filters_out_non_draft_status_returned_by_server(): void
+    {
+        $sent = $this->draft(8, '42', '2026-05-20');
+        $sent['status'] = 'sent';
+        $this->mockHandler->append($this->json(['data' => [$sent]]));
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertNull($result);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_rejects_associative_array(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('lineItems must be a list');
+
+        $this->client->appendLineItemsToDraftOrCreate('42', [
+            'a' => new LineItemData(description: 'Scan', quantity: 1, unitPrice: 1.0),
+        ]);
+    }
+
+    #[Test]
+    public function append_line_items_to_draft_or_create_rejects_non_lineitemdata_entries(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('lineItems must contain only LineItemData instances');
+
+        $this->client->appendLineItemsToDraftOrCreate('42', ['not-a-lineitem']);
+    }
+
+    #[Test]
+    public function client_refuses_to_be_serialized(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('TidyBillClient must not be serialized');
+
+        serialize($this->client);
+    }
+
+    #[Test]
+    public function decode_handles_empty_response_body(): void
+    {
+        $this->mockHandler->append(new Response(200, ['Content-Type' => 'application/json'], ''));
+
+        $result = $this->client->getInvoices();
+
+        $this->assertSame([], $result);
     }
 }

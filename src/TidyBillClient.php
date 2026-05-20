@@ -141,16 +141,27 @@ class TidyBillClient
         $invoices = $this->getInvoices(['client_id' => $clientId, 'status' => 'draft']);
 
         // TidyBill's client_id filter has been observed returning invoices
-        // for other clients; re-filter defensively before resolving.
+        // for other clients; re-filter clientId AND status defensively
+        // before resolving. Trim clientId on both sides to absorb whitespace drift.
+        $target = trim($clientId);
         $drafts = array_values(array_filter(
             $invoices,
-            fn (InvoiceResult $i) => $i->clientId === $clientId,
+            fn (InvoiceResult $i) => trim($i->clientId) === $target && $i->status === 'draft',
         ));
 
         return $this->resolveDrafts($drafts, $clientId, $tieBreak);
     }
 
     /**
+     * Post line items to a client's draft invoice if one exists, else create a new
+     * invoice with them.
+     *
+     * WARNING: Appending to an existing draft is NOT atomic across multiple line items.
+     * If addLineItem fails mid-loop (network error, draft finalised by another process),
+     * earlier items are already persisted and a naive retry will duplicate them. Callers
+     * with multi-item payloads must either (a) ensure idempotency at their level, or
+     * (b) accept that mid-loop failures require manual reconciliation.
+     *
      * @param LineItemData[] $lineItems
      */
     public function appendLineItemsToDraftOrCreate(
@@ -158,9 +169,7 @@ class TidyBillClient
         array $lineItems,
         DraftTieBreak $tieBreak = DraftTieBreak::Newest,
     ): InvoiceResult {
-        if ($lineItems === []) {
-            throw new \InvalidArgumentException('lineItems must not be empty');
-        }
+        $this->guardLineItems($lineItems);
 
         $draft = $this->findDraftInvoice($clientId, $tieBreak);
 
@@ -173,11 +182,27 @@ class TidyBillClient
             ));
         }
 
-        foreach ($lineItems as $item) {
-            $this->addLineItem($draft->id, $item);
-        }
+        $this->addLineItems($draft->id, $lineItems);
 
         return $this->getInvoice($draft->id);
+    }
+
+    /**
+     * @param LineItemData[] $lineItems
+     */
+    private function guardLineItems(array $lineItems): void
+    {
+        if ($lineItems === []) {
+            throw new \InvalidArgumentException('lineItems must not be empty');
+        }
+        if (!array_is_list($lineItems)) {
+            throw new \InvalidArgumentException('lineItems must be a list (zero-indexed array)');
+        }
+        foreach ($lineItems as $item) {
+            if (!$item instanceof LineItemData) {
+                throw new \InvalidArgumentException('lineItems must contain only LineItemData instances');
+            }
+        }
     }
 
     /**
@@ -200,9 +225,10 @@ class TidyBillClient
             );
         }
 
-        usort($drafts, fn (InvoiceResult $a, InvoiceResult $b) => $tieBreak === DraftTieBreak::Newest
-            ? [$b->issueDate, $b->id] <=> [$a->issueDate, $a->id]
-            : [$a->issueDate, $a->id] <=> [$b->issueDate, $b->id]);
+        $comparator = $tieBreak === DraftTieBreak::Newest
+            ? fn (InvoiceResult $a, InvoiceResult $b) => [$b->issueDate, $b->id] <=> [$a->issueDate, $a->id]
+            : fn (InvoiceResult $a, InvoiceResult $b) => [$a->issueDate, $a->id] <=> [$b->issueDate, $b->id];
+        usort($drafts, $comparator);
 
         return $drafts[0];
     }
@@ -222,6 +248,18 @@ class TidyBillClient
             'companyId' => $this->companyId,
             'token'     => '***',
         ];
+    }
+
+    /**
+     * Refuse serialization. PHP would otherwise include the bearer token verbatim,
+     * which leaks secrets into Laravel queue payloads, session stores, or any sink
+     * that persists a serialized job/object. Resolve from the DI container instead.
+     */
+    public function __serialize(): array
+    {
+        throw new \LogicException(
+            'TidyBillClient must not be serialized. Resolve it from the DI container at handler time.'
+        );
     }
 
     private function decode(ResponseInterface $response): array

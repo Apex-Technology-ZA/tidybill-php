@@ -138,18 +138,38 @@ class TidyBillClient
         string $clientId,
         DraftTieBreak $tieBreak = DraftTieBreak::Newest,
     ): ?InvoiceResult {
-        $invoices = $this->getInvoices(['client_id' => $clientId, 'status' => 'draft']);
-
-        // TidyBill's client_id filter has been observed returning invoices
-        // for other clients; re-filter clientId AND status defensively
-        // before resolving. Trim clientId on both sides to absorb whitespace drift.
+        // TidyBill ignores the client_id and status query filters and returns the full
+        // active invoice set (paginated). Fetch every page and filter client-side, else a
+        // draft beyond page 1 is missed and appendLineItemsToDraftOrCreate creates a duplicate.
         $target = trim($clientId);
-        $drafts = array_values(array_filter(
-            $invoices,
-            fn (InvoiceResult $i) => trim($i->clientId) === $target && $i->status === 'draft',
-        ));
+        $drafts = [];
+        foreach ($this->fetchActiveInvoicesRaw() as $raw) {
+            $invoice = InvoiceResult::fromResponse($raw);
+            if (trim($invoice->clientId) === $target && $invoice->status === 'draft') {
+                $drafts[] = $invoice;
+            }
+        }
 
         return $this->resolveDrafts($drafts, $clientId, $tieBreak);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchActiveInvoicesRaw(): array
+    {
+        $all  = [];
+        $page = 1;
+        do {
+            $body = $this->decode($this->send('GET', 'api/invoices', ['query' => ['page' => $page]]));
+            foreach ($body['data'] ?? [] as $invoice) {
+                $all[] = $invoice;
+            }
+            $lastPage = (int) ($body['meta']['last_page'] ?? 1);
+            $page++;
+        } while ($page <= $lastPage);
+
+        return $all;
     }
 
     /**

@@ -628,11 +628,47 @@ class TidyBillClientTest extends TestCase
     {
         $sent = $this->draft(8, '42', '2026-05-20');
         $sent['status'] = 'sent';
-        $this->mockHandler->append($this->json(['data' => [$sent]]));
+        $other = $this->draft(9, '99', '2026-05-21');
+        $this->mockHandler->append($this->json(['data' => [$sent, $other]]));
 
         $result = $this->client->findDraftInvoice('42');
 
         $this->assertNull($result);
+    }
+
+    #[Test]
+    public function find_draft_invoice_paginates_to_find_draft_beyond_first_page(): void
+    {
+        $page1 = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $page1[] = $this->draft($i, '99', '2026-05-01');
+        }
+
+        $this->mockHandler->append(
+            $this->json(['data' => $page1, 'meta' => ['current_page' => 1, 'last_page' => 2, 'per_page' => 50, 'total' => 51]]),
+            $this->json(['data' => [$this->draft(777, '42', '2026-05-20')], 'meta' => ['current_page' => 2, 'last_page' => 2, 'per_page' => 50, 'total' => 51]]),
+        );
+
+        $result = $this->client->findDraftInvoice('42');
+
+        $this->assertNotNull($result);
+        $this->assertSame(777, $result->id);
+        $this->assertCount(2, $this->history);
+        $this->assertStringContainsString('page=1', (string) $this->history[0]['request']->getUri());
+        $this->assertStringContainsString('page=2', (string) $this->history[1]['request']->getUri());
+    }
+
+    #[Test]
+    public function find_draft_invoice_does_not_send_client_id_or_status_filters(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [$this->draft(7, '42', '2026-05-20')]]));
+
+        $this->client->findDraftInvoice('42');
+
+        $uri = (string) $this->lastRequest()->getUri();
+        $this->assertStringNotContainsString('client_id', $uri);
+        $this->assertStringNotContainsString('status', $uri);
+        $this->assertStringContainsString('page=1', $uri);
     }
 
     #[Test]

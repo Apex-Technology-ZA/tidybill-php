@@ -148,6 +148,58 @@ echo $clientData->email; // ?string
 echo $clientData->id;    // string
 ```
 
+### E-invoicing
+
+TidyBill generates and validates structured e-invoice documents from your invoices: ZUGFeRD / Factur-X (EN 16931) and UBL Peppol BIS Billing 3.0. These methods drive that generation and validation via the TidyBill API. They do **not** transmit invoices on the Peppol network; TidyBill produces the compliant document and you retrieve it.
+
+```php
+use ApexTechnology\TidyBill\Enums\EInvoiceFormat;
+
+// Status of e-invoice generation for an invoice
+$status = $client->getEInvoiceStatus(invoiceId: 123);
+echo $status->enabled ? 'on' : 'off';        // bool
+echo $status->format?->value;                // ?EInvoiceFormat ('zugferd_en16931' | 'ubl_peppol_bis3')
+echo $status->generatedAt ?? 'not generated'; // ?string
+$status->warnings;                            // array
+$status->hasXml;                              // bool
+
+// Download the generated XML (raw application/xml body).
+// Throws TidyBillNotFoundException if no XML has been generated.
+$xml = $client->downloadEInvoiceXml(invoiceId: 123); // string
+
+// Validate an invoice against the target format without generating
+$preview = $client->previewEInvoice(invoiceId: 123);
+$preview->valid;  // bool
+$preview->issues; // array of issue objects
+
+// Company-level settings (uses the client's configured company ID)
+$company = $client->getCompanyEInvoiceSettings();
+echo $company->format->value; // EInvoiceFormat
+
+$client->updateCompanyEInvoiceSettings([
+    'enabled' => true,
+    'format'  => EInvoiceFormat::ZugferdEn16931->value,
+    'vat_id'  => 'GB123456789',
+    'electronic_address_scheme' => '0088',
+    'electronic_address'        => '7300010000001',
+    'tax_registration_number'   => 'TRN-1',
+]);
+
+// Client-level settings (enabled = null inherits the company setting)
+$clientSettings = $client->getClientEInvoiceSettings(clientId: '42');
+
+$client->updateClientEInvoiceSettings('42', [
+    'enabled'                 => true,
+    'vat_id'                  => 'GB999',
+    'buyer_reference_default' => 'PO-1234',
+    'electronic_address_scheme' => '0088',
+    'electronic_address'        => '5790000435975',
+    'tax_registration_number'   => 'TRN-9',
+]);
+```
+
+`EInvoiceFormat` cases: `EInvoiceFormat::ZugferdEn16931` (`'zugferd_en16931'`) and `EInvoiceFormat::UblPeppolBis3` (`'ubl_peppol_bis3'`).
+
 ### Error handling
 
 ```php

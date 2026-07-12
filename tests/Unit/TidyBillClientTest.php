@@ -2,11 +2,16 @@
 
 namespace ApexTechnology\TidyBill\Tests\Unit;
 
+use ApexTechnology\TidyBill\DTOs\ClientEInvoiceSettings;
+use ApexTechnology\TidyBill\DTOs\CompanyEInvoiceSettings;
 use ApexTechnology\TidyBill\DTOs\CreateInvoiceData;
+use ApexTechnology\TidyBill\DTOs\EInvoicePreviewResult;
+use ApexTechnology\TidyBill\DTOs\EInvoiceStatus;
 use ApexTechnology\TidyBill\DTOs\InvoiceResult;
 use ApexTechnology\TidyBill\DTOs\LineItemData;
 use ApexTechnology\TidyBill\DTOs\LineItemResult;
 use ApexTechnology\TidyBill\Enums\DraftTieBreak;
+use ApexTechnology\TidyBill\Enums\EInvoiceFormat;
 use ApexTechnology\TidyBill\Exceptions\MultipleDraftsException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillAuthException;
 use ApexTechnology\TidyBill\Exceptions\TidyBillException;
@@ -708,5 +713,205 @@ class TidyBillClientTest extends TestCase
         $result = $this->client->getInvoices();
 
         $this->assertSame([], $result);
+    }
+
+    #[Test]
+    public function get_einvoice_status(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'      => true,
+            'format'       => 'zugferd_en16931',
+            'generated_at' => '2026-07-01T10:00:00Z',
+            'warnings'     => ['missing buyer reference'],
+            'has_xml'      => true,
+        ]]));
+
+        $result = $this->client->getEInvoiceStatus(123);
+
+        $this->assertInstanceOf(EInvoiceStatus::class, $result);
+        $this->assertTrue($result->enabled);
+        $this->assertSame(EInvoiceFormat::ZugferdEn16931, $result->format);
+        $this->assertSame('2026-07-01T10:00:00Z', $result->generatedAt);
+        $this->assertSame(['missing buyer reference'], $result->warnings);
+        $this->assertTrue($result->hasXml);
+
+        $req = $this->lastRequest();
+        $this->assertSame('GET', $req->getMethod());
+        $this->assertStringContainsString('api/invoices/123/einvoice-status', (string) $req->getUri());
+        $this->assertSame('Bearer test-token', $req->getHeaderLine('Authorization'));
+        $this->assertSame('test-company', $req->getHeaderLine('X-Company-Id'));
+    }
+
+    #[Test]
+    public function get_einvoice_status_with_null_format_and_no_xml(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'      => false,
+            'format'       => null,
+            'generated_at' => null,
+            'warnings'     => [],
+            'has_xml'      => false,
+        ]]));
+
+        $result = $this->client->getEInvoiceStatus(5);
+
+        $this->assertFalse($result->enabled);
+        $this->assertNull($result->format);
+        $this->assertNull($result->generatedAt);
+        $this->assertFalse($result->hasXml);
+    }
+
+    #[Test]
+    public function download_einvoice_xml_returns_raw_body(): void
+    {
+        $xml = '<?xml version="1.0"?><Invoice><ID>INV-1</ID></Invoice>';
+        $this->mockHandler->append(new Response(200, ['Content-Type' => 'application/xml'], $xml));
+
+        $result = $this->client->downloadEInvoiceXml(123);
+
+        $this->assertSame($xml, $result);
+
+        $req = $this->lastRequest();
+        $this->assertSame('GET', $req->getMethod());
+        $this->assertStringContainsString('api/invoices/123/einvoice-xml', (string) $req->getUri());
+    }
+
+    #[Test]
+    public function download_einvoice_xml_throws_not_found_when_no_xml(): void
+    {
+        $this->mockHandler->append($this->json(['message' => 'No XML generated for this invoice'], 404));
+
+        $this->expectException(TidyBillNotFoundException::class);
+
+        $this->client->downloadEInvoiceXml(123);
+    }
+
+    #[Test]
+    public function preview_einvoice(): void
+    {
+        $issues = [['severity' => 'error', 'code' => 'BR-01', 'message' => 'Missing buyer reference']];
+        $this->mockHandler->append($this->json(['data' => [
+            'valid'  => false,
+            'issues' => $issues,
+        ]]));
+
+        $result = $this->client->previewEInvoice(123);
+
+        $this->assertInstanceOf(EInvoicePreviewResult::class, $result);
+        $this->assertFalse($result->valid);
+        $this->assertSame($issues, $result->issues);
+
+        $req = $this->lastRequest();
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertStringContainsString('api/invoices/123/einvoice-preview', (string) $req->getUri());
+    }
+
+    #[Test]
+    public function get_company_einvoice_settings(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'                   => true,
+            'format'                    => 'ubl_peppol_bis3',
+            'electronic_address_scheme' => '0088',
+            'electronic_address'        => '7300010000001',
+            'tax_registration_number'   => 'TRN-123',
+            'vat_id'                    => 'GB123456789',
+        ]]));
+
+        $result = $this->client->getCompanyEInvoiceSettings();
+
+        $this->assertInstanceOf(CompanyEInvoiceSettings::class, $result);
+        $this->assertTrue($result->enabled);
+        $this->assertSame(EInvoiceFormat::UblPeppolBis3, $result->format);
+        $this->assertSame('0088', $result->electronicAddressScheme);
+        $this->assertSame('GB123456789', $result->vatId);
+
+        $req = $this->lastRequest();
+        $this->assertSame('GET', $req->getMethod());
+        $this->assertStringContainsString('api/companies/test-company/einvoice-settings', (string) $req->getUri());
+    }
+
+    #[Test]
+    public function update_company_einvoice_settings(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'                   => true,
+            'format'                    => 'zugferd_en16931',
+            'electronic_address_scheme' => null,
+            'electronic_address'        => null,
+            'tax_registration_number'   => null,
+            'vat_id'                    => 'GB123456789',
+        ]]));
+
+        $result = $this->client->updateCompanyEInvoiceSettings([
+            'enabled' => true,
+            'vat_id'  => 'GB123456789',
+            'format'  => 'zugferd_en16931',
+        ]);
+
+        $this->assertInstanceOf(CompanyEInvoiceSettings::class, $result);
+        $this->assertSame(EInvoiceFormat::ZugferdEn16931, $result->format);
+
+        $req  = $this->lastRequest();
+        $body = json_decode((string) $req->getBody(), true);
+
+        $this->assertSame('PUT', $req->getMethod());
+        $this->assertStringContainsString('api/companies/test-company/einvoice-settings', (string) $req->getUri());
+        $this->assertTrue($body['enabled']);
+        $this->assertSame('GB123456789', $body['vat_id']);
+        $this->assertSame('zugferd_en16931', $body['format']);
+    }
+
+    #[Test]
+    public function get_client_einvoice_settings(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'                   => null,
+            'vat_id'                    => 'GB999',
+            'tax_registration_number'   => 'TRN-9',
+            'electronic_address_scheme' => '0088',
+            'electronic_address'        => '5790000435975',
+            'buyer_reference_default'   => 'PO-1234',
+        ]]));
+
+        $result = $this->client->getClientEInvoiceSettings('42');
+
+        $this->assertInstanceOf(ClientEInvoiceSettings::class, $result);
+        $this->assertNull($result->enabled);
+        $this->assertSame('GB999', $result->vatId);
+        $this->assertSame('PO-1234', $result->buyerReferenceDefault);
+
+        $req = $this->lastRequest();
+        $this->assertSame('GET', $req->getMethod());
+        $this->assertStringContainsString('api/clients/42/einvoice-settings', (string) $req->getUri());
+    }
+
+    #[Test]
+    public function update_client_einvoice_settings(): void
+    {
+        $this->mockHandler->append($this->json(['data' => [
+            'enabled'                   => true,
+            'vat_id'                    => 'GB999',
+            'tax_registration_number'   => null,
+            'electronic_address_scheme' => null,
+            'electronic_address'        => null,
+            'buyer_reference_default'   => 'PO-1234',
+        ]]));
+
+        $result = $this->client->updateClientEInvoiceSettings('42', [
+            'enabled'                 => true,
+            'buyer_reference_default' => 'PO-1234',
+        ]);
+
+        $this->assertInstanceOf(ClientEInvoiceSettings::class, $result);
+        $this->assertTrue($result->enabled);
+
+        $req  = $this->lastRequest();
+        $body = json_decode((string) $req->getBody(), true);
+
+        $this->assertSame('PUT', $req->getMethod());
+        $this->assertStringContainsString('api/clients/42/einvoice-settings', (string) $req->getUri());
+        $this->assertTrue($body['enabled']);
+        $this->assertSame('PO-1234', $body['buyer_reference_default']);
     }
 }

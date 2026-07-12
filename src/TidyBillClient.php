@@ -3,7 +3,11 @@
 namespace ApexTechnology\TidyBill;
 
 use ApexTechnology\TidyBill\DTOs\ClientData;
+use ApexTechnology\TidyBill\DTOs\ClientEInvoiceSettings;
+use ApexTechnology\TidyBill\DTOs\CompanyEInvoiceSettings;
 use ApexTechnology\TidyBill\DTOs\CreateInvoiceData;
+use ApexTechnology\TidyBill\DTOs\EInvoicePreviewResult;
+use ApexTechnology\TidyBill\DTOs\EInvoiceStatus;
 use ApexTechnology\TidyBill\DTOs\InvoiceResult;
 use ApexTechnology\TidyBill\DTOs\LineItemData;
 use ApexTechnology\TidyBill\DTOs\LineItemResult;
@@ -132,6 +136,55 @@ class TidyBillClient
         $response = $this->send('GET', "api/clients/{$id}");
 
         return ClientData::fromResponse($this->decode($response));
+    }
+
+    public function getEInvoiceStatus(int $invoiceId): EInvoiceStatus
+    {
+        $response = $this->send('GET', "api/invoices/{$invoiceId}/einvoice-status");
+
+        return EInvoiceStatus::fromResponse($this->decode($response));
+    }
+
+    public function downloadEInvoiceXml(int $invoiceId): string
+    {
+        $response = $this->send('GET', "api/invoices/{$invoiceId}/einvoice-xml");
+
+        return (string) $response->getBody();
+    }
+
+    public function previewEInvoice(int $invoiceId): EInvoicePreviewResult
+    {
+        $response = $this->send('POST', "api/invoices/{$invoiceId}/einvoice-preview");
+
+        return EInvoicePreviewResult::fromResponse($this->decode($response));
+    }
+
+    public function getCompanyEInvoiceSettings(): CompanyEInvoiceSettings
+    {
+        $response = $this->send('GET', "api/companies/{$this->companyId}/einvoice-settings");
+
+        return CompanyEInvoiceSettings::fromResponse($this->decode($response));
+    }
+
+    public function updateCompanyEInvoiceSettings(array $data): CompanyEInvoiceSettings
+    {
+        $response = $this->send('PUT', "api/companies/{$this->companyId}/einvoice-settings", ['json' => $data]);
+
+        return CompanyEInvoiceSettings::fromResponse($this->decode($response));
+    }
+
+    public function getClientEInvoiceSettings(string $clientId): ClientEInvoiceSettings
+    {
+        $response = $this->send('GET', "api/clients/{$clientId}/einvoice-settings");
+
+        return ClientEInvoiceSettings::fromResponse($this->decode($response));
+    }
+
+    public function updateClientEInvoiceSettings(string $clientId, array $data): ClientEInvoiceSettings
+    {
+        $response = $this->send('PUT', "api/clients/{$clientId}/einvoice-settings", ['json' => $data]);
+
+        return ClientEInvoiceSettings::fromResponse($this->decode($response));
     }
 
     public function findDraftInvoice(

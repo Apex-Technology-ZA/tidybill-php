@@ -6,7 +6,7 @@ A framework-agnostic PHP SDK for the [TidyBill](https://tidybill.app) invoicing 
 
 - PHP ^8.2
 - `ext-json`
-- `guzzlehttp/guzzle` ^7.0
+- `guzzlehttp/guzzle` ^7.0 or ^8.0
 
 ## Installation
 
